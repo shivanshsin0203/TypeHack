@@ -1,18 +1,18 @@
 "use client";
 import { useEffect, useState } from "react";
-import getWords from "@/lib/LetterArray"; // Import the function instead
+import getWords from "@/lib/LetterArray";
 import "@/components/cursorBlink.css";
 
 export default function Home() {
   const [letterArray, setLetterArray] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [typedArray, setTypedArray] = useState<string[]>([]); // Track the typed letters
-  const [mistakes, setMistakes] = useState<number>(0); // Track the number of mistakes
-
+  const [typedArray, setTypedArray] = useState<string[]>([]);
+  const [mistakes, setMistakes] = useState<number>(0);
+  const [allowType, setAllowType] = useState<boolean>(true);
   useEffect(() => {
     async function fetchWords() {
       const words = await getWords();
-      setLetterArray(words); // Update state with fetched words
+      setLetterArray(words);
     }
 
     fetchWords();
@@ -20,32 +20,39 @@ export default function Home() {
 
   function handleKeyPresses(e: any) {
     const charTyped = e.key;
-
-    // Handle Backspace
-    if (charTyped === "Backspace") {
-      if (currentIndex > 0) {
-        setCurrentIndex(currentIndex - 1);
-        setTypedArray(typedArray.slice(0, -1));
-      }
+     
+    if(charTyped === "Escape"){
+      setTypedArray([]);
+      setCurrentIndex(0);
+      setMistakes(0);
+      setAllowType(true);
       return;
     }
 
-    
-    if (charTyped.length === 1) {
+    if (charTyped === "Backspace" && !allowType) {
+      if (currentIndex > 0) {
+        
+        setTypedArray(typedArray.slice(0, -1));
+        setAllowType(true);
+      }
+      return;
+    }
+    if(allowType){
+    if (charTyped.length === 1 ) {
       const updatedTypedArray = [...typedArray, charTyped];
 
-      
       if (charTyped === letterArray[currentIndex]) {
         setCurrentIndex(currentIndex + 1);
       } else {
         setMistakes(mistakes + 1);
+        setAllowType(false);
+        
       }
 
       setTypedArray(updatedTypedArray);
-    }
+    }}
   }
 
-  
   const calculateWPM = () => {
     const wordsTyped = typedArray.length / 5;
     const minutesElapsed = 1; // For example, change this to the actual elapsed time
@@ -80,23 +87,23 @@ export default function Home() {
 
       <div className="flex justify-center items-center flex-col h-[60vh]">
         <div className="text-[30px] relative w-[80vw] text-center text-[#646669]">
-          {letterArray.map((word, index) => (
+          {letterArray.map((letter, index) => (
             <span
               key={index}
               className={`transition-all duration-200 relative ${
-                index === currentIndex ? "text-yellow-500" : ""
+                index === currentIndex ? allowType ? "text-yellow-500" : "text-red-500" : ""
               } ${
                 index < currentIndex
-                  ? typedArray[index] === word
-                    ? "text-white"
-                    : "text-red-500"
+                  ? 
+                     "text-white"
+                    
                   : ""
               }`}
             >
               {index === currentIndex && (
                 <span className="absolute top-2 cursor-blink">_</span>
               )}
-              {word}
+              {letter}
             </span>
           ))}
         </div>
