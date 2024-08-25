@@ -1,12 +1,11 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Line } from "react-chartjs-2";
-import { Chart as ChartJS, LineElement, PointElement, LinearScale, Title, CategoryScale } from 'chart.js';
+import { Chart as ChartJS, LineElement, PointElement, LinearScale, Title, CategoryScale, Legend, Tooltip } from 'chart.js';
 import getWords from "@/lib/LetterArray";
 import "@/components/cursorBlink.css";
 
-// Register the necessary components for the chart
-ChartJS.register(LineElement, PointElement, LinearScale, Title, CategoryScale);
+ChartJS.register(LineElement, PointElement, LinearScale, Title, CategoryScale, Legend, Tooltip);
 
 export default function Home() {
   const [letterArray, setLetterArray] = useState<string[]>([]);
@@ -18,72 +17,83 @@ export default function Home() {
   const [showGraphs, setShowGraphs] = useState(false);
   const [wpmData, setWpmData] = useState<number[]>([]);
   const [mistakesData, setMistakesData] = useState<number[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     async function fetchWords() {
       const words = await getWords();
       setLetterArray(words);
     }
-
     fetchWords();
   }, []);
 
   useEffect(() => {
-    if (timeLeft > 0 && !showGraphs) {
-      const timerId = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
-      return () => clearTimeout(timerId);
+    if (isTyping && timeLeft > 0) {
+      timerRef.current = setTimeout(() => {
+        setTimeLeft(prev => prev - 1);
+        updateWPMAndMistakes();
+      }, 1000);
     } else if (timeLeft === 0) {
       setShowGraphs(true);
+      setIsTyping(false);
     }
-  }, [timeLeft, showGraphs]);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [isTyping, timeLeft]);
 
   function handleKeyPresses(e: any) {
     const charTyped = e.key;
     if (!showGraphs) {
+      if (!isTyping) setIsTyping(true);
+
       if (charTyped === "Escape") {
-        setTypedArray([]);
-        setCurrentIndex(0);
-        setMistakes(0);
-        setAllowType(true);
-        setTimeLeft(15);
-        
+        resetEverything();
         return;
       }
 
       if (charTyped === "Backspace" && !allowType) {
         if (currentIndex > 0) {
-          setTypedArray(typedArray.slice(0, -1));
+          setTypedArray(prev => prev.slice(0, -1));
           setAllowType(true);
         }
         return;
       }
 
-      if (allowType) {
-        if (charTyped.length === 1) {
-          const updatedTypedArray = [...typedArray, charTyped];
-
-          if (charTyped === letterArray[currentIndex]) {
-            setCurrentIndex(currentIndex + 1);
-          } else {
-            setMistakes(mistakes + 1);
-            setAllowType(false);
-          }
-
-          setTypedArray(updatedTypedArray);
+      if (allowType && charTyped.length === 1) {
+        setTypedArray(prev => [...prev, charTyped]);
+        if (charTyped === letterArray[currentIndex]) {
+          setCurrentIndex(prev => prev + 1);
+        } else {
+          setMistakes(prev => prev + 1);
+          setAllowType(false);
         }
       }
     }
   }
 
-  useEffect(() => {
-    if (!showGraphs) {
-      const wordsTyped = typedArray.length / 5;
-      const minutesElapsed = (15 - timeLeft) / 60;
-      const wpm = minutesElapsed > 0 ? (wordsTyped / minutesElapsed) : 0;
-      setWpmData([...wpmData, wpm]);
-      setMistakesData([...mistakesData, mistakes]);
-    }
-  }, [typedArray]);
+  function updateWPMAndMistakes() {
+    const wordsTyped = typedArray.length / 5;
+    const minutesElapsed = (15 - timeLeft) / 60;
+    const wpm = minutesElapsed > 0 ? Math.round(wordsTyped / minutesElapsed) : 0;
+    setWpmData(prev => [...prev, wpm]);
+    setMistakesData(prev => [...prev, mistakes]);
+  }
+
+  function resetEverything() {
+    setTypedArray([]);
+    setCurrentIndex(0);
+    setMistakes(0);
+    setAllowType(true);
+    setTimeLeft(15);
+    setIsTyping(false);
+    setWpmData([]);
+    setMistakesData([]);
+    setShowGraphs(false);
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }
 
   const calculateWPM = () => {
     const wordsTyped = typedArray.length / 5;
@@ -94,33 +104,83 @@ export default function Home() {
   const calculateAccuracy = () => {
     const correctChars = currentIndex - mistakes;
     const totalTyped = typedArray.length;
-    return ((correctChars / totalTyped) * 100).toFixed(2);
+    return totalTyped > 0 ? ((correctChars / totalTyped) * 100).toFixed(2) : "100.00";
   };
 
-  const wpmGraphData = {
+  const graphData = {
     labels: Array.from({ length: wpmData.length }, (_, i) => i + 1),
     datasets: [
       {
         label: 'WPM',
         data: wpmData,
         fill: false,
-        borderColor: 'rgba(75,192,192,1)',
+        borderColor: 'rgba(0, 123, 255, 1)',
+        backgroundColor: 'rgba(0, 123, 255, 0.5)',
         tension: 0.1,
+        yAxisID: 'y',
       },
-    ],
-  };
-
-  const mistakesGraphData = {
-    labels: Array.from({ length: mistakesData.length }, (_, i) => i + 1),
-    datasets: [
       {
         label: 'Mistakes',
         data: mistakesData,
         fill: false,
-        borderColor: 'rgba(255,99,132,1)',
+        borderColor: 'rgba(255, 99, 132, 1)',
+        backgroundColor: 'rgba(255, 99, 132, 0.5)',
         tension: 0.1,
+        yAxisID: 'y1',
       },
     ],
+  };
+
+  const graphOptions = {
+    responsive: true,
+    interaction: {
+      mode: 'index' as const,
+      intersect: false,
+    },
+    stacked: false,
+    plugins: {
+      title: {
+        display: true,
+        text: 'WPM and Mistakes Over Time',
+      },
+      legend: {
+        display: true,
+        position: 'top' as const,
+      },
+      tooltip: {
+        mode: 'index'as const,
+        intersect: false,
+      },
+    },
+    scales: {
+      y: {
+        type: 'linear' as const,
+        display: true,
+        position: 'left' as const,
+        title: {
+          display: true,
+          text: 'WPM',
+        },
+      },
+      y1: {
+        type: 'linear' as const,
+        display: true,
+        position: 'right' as const,
+        title: {
+          display: true,
+          text: 'Mistakes',
+        },
+        grid: {
+          drawOnChartArea: false,
+        },
+      },
+      x: {
+        title: {
+          display: true,
+          text: 'Seconds',
+        },
+      },
+    },
   };
 
   return (
@@ -177,22 +237,16 @@ export default function Home() {
         </div>
       ) : (
         <div className="w-[80%] ml-[10%] mt-6">
-          <div className=" mb-4 flex justify-between">
+          <div className="mb-4 flex justify-between">
             <div>
               <p className="text-[#696669]">WPM</p>
               <p className="text-yellow-500 text-lg font-bold">{calculateWPM()}</p>
               <p className="text-[#696669]">Accuracy</p>
               <p className="text-yellow-500 text-lg font-bold">{calculateAccuracy()}%</p>
-              
             </div>
           </div>
-          <div className="flex space-x-4">
-            <div className="w-[80%]">
-              <Line data={wpmGraphData} />
-            </div>
-            <div className="w-[80%]">
-              <Line data={mistakesGraphData} />
-            </div>
+          <div className="w-full">
+            <Line data={graphData} options={graphOptions} />
           </div>
         </div>
       )}
